@@ -101,7 +101,7 @@ sub import {
       my $curr = ref($r) eq "SCALAR" ? ($$r//"u") :
                  ref($r) eq "HASH"   ? hash2str($r) : oops;
       if ($curr ne $defaults{$var}) {
-        carp "$var was set by an earlier pragma before importing ", __PACKAGE__, 
+        carp "$var was set by an earlier pragma before importing ", __PACKAGE__,
              " (might now be un-done)\n"
       }
     }

@@ -22,101 +22,92 @@ use feature 'signatures';
 use Threads::DependentJobs;
 Threads::DependentJobs->Configure(DEBUG => $debug);
 
-use constant NT => 2;
+my $numcpus = $ENV{NUMBER_OF_PROCESSORS}  # provided by Windows
+    || (`grep "processor\t:" /proc/cpuinfo  | wc -l`);
+chomp $numcpus;
+unless (looks_like_number($numcpus) && $numcpus >= 1) {
+  skip_all("Can not determine number of CPUs");
+}
 
-use constant MIN_INTERVAL_SECS => 1;
-use constant SLEEP_SECS => int( (NT+7)/8 ) / MIN_INTERVAL_SECS; # 1 up to 8 threads, 2 up to 16 etc.
-use constant SPIN_SECS => SLEEP_SECS / 2;
+my $num_threads = min($numcpus, 3); # use at most 3 threads
+
+use constant SLEEP_SECS => 2;
 
 #----------------------------------------------------------
 sub _inner_spin($count) {
   for (my $n=0; $n < $count; $n++) {
-    my $t=0; for (my $i=0;$i<10000;++$i) { 
-      $t += (((((((((($i*1.001)/1.01)/1)/123)/1)/1)*1)*1)*1)*1); 
+    my $t=0; for (my $i=0;$i<20000;++$i) {
+      $t += (((((((((($i*1.001)/1.01)/1)/123)/1)/1)*1)*1)*1)*1);
     }
   }
 }
-use constant CYCLES_PER_SPIN => do{ # calibrate CPU speed
+use constant CYCLES_PER_SEC => do{ # calibrate to CPU speed
   _inner_spin(10); # warmup
   my $t0 = Time::HiRes::time();
   my $tot;
   for ($tot=0; ;$tot++) {
     _inner_spin(1);
     my $t1 = Time::HiRes::time();
-    last if ($t1-$t0) >= SPIN_SECS/10;
+    last if ($t1-$t0) >= 1/5;
   }
-  ($tot+1) * 10
+  ($tot+1) *5
 };
-sub spin() { 
-  my $t0 = Time::HiRes::time();
-  _inner_spin(CYCLES_PER_SPIN); 
-  my $t1 = Time::HiRes::time();
-  note "## spin actutal dwell = ", $t1-$t0, "\n";
+sub spin($secs) {
+  _inner_spin($secs * CYCLES_PER_SEC);
 }
 if (1 or $debug) {
-  note "NT = ",NT,"\n";
-  note "MIN_INTERVAL_SECS = ",MIN_INTERVAL_SECS,"\n";
+  note "CYCLES_PER_SEC = ",CYCLES_PER_SEC,"\n";
   note "SLEEP_SECS = ",SLEEP_SECS,"\n";
-  note "CYCLES_PER_SPIN = ",CYCLES_PER_SPIN,"\n";
-  note "SPIN_SECS = ",SPIN_SECS,"\n";
-} 
+  note "numcpus = ",$numcpus,"\n";
+  note "num_threads = ",$num_threads,"\n";
+}
 #----------------------------------------------------------
 
-#note "AAA"; spin() for (1..10); note "BBB";
+spinner(args => [2]) if $debug; ## TEST IN MAIN THREAD
 
-my $which_tid :shared = shared_clone([ (undef) x NT ]);
-my $tstart_times :shared = shared_clone([ (undef) x NT ]);
-my $tpostspin_times :shared = shared_clone([ (undef) x NT ]);
-my $tpostsleep_times :shared = shared_clone([ (undef) x NT ]);
+my %results_direct :shared ;
 
-my $jobsch = Threads::DependentJobs->new(NUMTHREADS => NT);
+my $jobsch = Threads::DependentJobs->new(NUMTHREADS => $num_threads);
 
-my $base_time = tsstr();
-
-my @jobids = map{ $jobsch->sched(subname => "jobfunc", args => [$_]) } 0..(NT-1);
-$jobsch->wait2();
-
-like([sort { $a <=> $b } @$which_tid], [1..NT]);
-
-note dvis '$base_time\n';
-note dvis '$tstart_times\n';
-note dvis '$tpostspin_times\n';
-note dvis '$tpostsleep_times\n';
-
-foreach my $tn (1..NT) {
-  ok( $tstart_times->[$tn-1] < $base_time+0.2,
-      "Thread $tn start time:     ".$tstart_times->[$tn-1]." < base_time+0.2" );
-
-  my $spindelta = $tpostspin_times->[$tn-1] - $tstart_times->[$tn-1];
-
-  ok( $spindelta >= 0.8*SPIN_SECS, 
-      "Thread $tn postspin delta: ".$spindelta." >= 0.8*SPIN_SECS(=".(0.8*SPIN_SECS).")" );
-
-  my $sleepdelta = $tpostsleep_times->[$tn-1] - $tpostspin_times->[$tn-1];
-
-  ok( $sleepdelta >= 0.95*SLEEP_SECS, 
-      "Thread $tn postsleep delta:".$sleepdelta." >= 0.95*SLEEP_SECS(=".(0.95*SLEEP_SECS).")" );
+note tsstr, " [main] before scheduling any jobs";
+my @jobids;
+for my $n (1..$num_threads) {
+  push @jobids, $jobsch->sched(subname => 'spinner', context => 'scalar',
+                               args => [SLEEP_SECS, \%results_direct]);
 }
+my $r = $jobsch->wait();
+for my $jobid(sort keys %$r) {
+  my $h = $r->{$jobid};
+  die "Job $jobid failed: $h->{ABORTMSG}" if $h->{ABORTMSG};
+  my $result = $h->{RESULT} // oops dvis '$h';
+  # If they ran in parallel, the wall time should approximately equal cpu time.
+  note dvis '### $result' if $debug;
+  oops dvis '%results_direct\n$result'
+    unless exists $result->{secs};
+  ok(abs($result->{et}-SLEEP_SECS) < SLEEP_SECS,
+     "Job $jobid : actual et=$result->{et} vs SLEEP_SECS=${\SLEEP_SECS}");
+  oops dvis '%results_direct\n$result'
+    if $result->{et} != $results_direct{$jobid}->{et};
+}
+note tsstr, " [main] after  wait";
 
 done_testing;
-exit 0;
 
-sub jobfunc(%params) {
+sub spinner(%params) {
   my $tid = threads->tid;
-  my $cputask = do{};
-  my $ix = $params{args}->[0] // oops;
-  { lock $which_tid;
-    $which_tid->[$ix] = $tid;
-    $tstart_times->[$ix] = tsstr();
+  my $jobid = my_jobid();
+  my ($secs, $result_href) = @{ $params{args} };
+  note tsstr, " [$tid] spinner starting secs=$secs";
+  my $t0 = Time::HiRes::time();
+  spin($secs);
+  my $t1 = Time::HiRes::time();
+  my $actual_et = $t1 - $t0;
+  note tsstr, " [$tid] spin $secs secs done, took $actual_et wall-clock secs";
+  if (defined $result_href) {
+    lock $result_href;
+    # Test both storing by ref
+    $result_href->{$jobid} = shared_clone {secs => $secs, et => $actual_et};
   }
-  note tsstr," ## [$tid] spin...";
-  spin();
-  note tsstr," ## [$tid] after.";
-  { #lock $which_tid;
-    $tpostspin_times->[$ix] = tsstr();
-  }
-  sleep SLEEP_SECS;
-  lock $which_tid;
-  $tpostsleep_times->[$ix] = tsstr();
+  # ...and as a return value
+  return {secs => $secs, et => $actual_et};
 }
-

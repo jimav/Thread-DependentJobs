@@ -6,7 +6,10 @@ package Threads::DependentJobs;
 our @ISA       = qw(Exporter);
 our @EXPORT    = qw(my_jobid);
 our @EXPORT_OK = qw();
-use version 0.77; our $VERSION = version->declare(sprintf "v%s", q$Revision: 2.8 $ =~ /(\d[.\d]+)/);
+
+{ no strict 'refs'; ${__PACKAGE__."::VER"."SION"} = 997.999; }
+# VERSION from Dist::Zilla::Plugin::OurPkgVersion
+# DATE from Dist::Zilla::Plugin::OurDate
 
 use threads;
 use threads::shared;
@@ -15,7 +18,7 @@ use List::Util qw/all any/;
 use List::MoreUtils qw/firstidx/;
 use Scalar::Util 1.10 qw(looks_like_number blessed);
 use Carp;
-use Data::Dumper::Interp qw/visnew vis visq viso avis hvis 
+use Data::Dumper::Interp qw/visnew vis visq viso avis hvis
                             dvis dviso ivis visr addrvis u qsh qshlist/;
 use Spreadsheet::Edit::Log qw/:btw oops get_logdest/;
 use File::Basename qw/basename/;
@@ -31,16 +34,16 @@ our %schedulers :shared;  # uniqeuid => { ... }
 our $sseq :shared = 0;
 
 $SIG{SEGV} = sub($sig,@) { btwbt "Caught $sig"; _exit(9); };
-$SIG{TERM}  = 
-$SIG{QUIT}  = 
+$SIG{TERM}  =
+$SIG{QUIT}  =
 $SIG{INT}  = sub($sig,@) { btwbt "Interrupted by SIG$sig"; };
 
 # global Configure options
 my $allserial :shared = 0;
 our $debug = 0;  # not shared for speed; set in new() before creating threads
 
-our $warnlock : shared; 
-sub install_warn_hook() {
+our $warnlock : shared;
+sub _install_warn_hook() {
   my $origwarn = $SIG{__WARN__};
   $SIG{__WARN__} = sub {
     lock $warnlock;
@@ -53,7 +56,7 @@ our $curr_job;           # not shared, but per-thread
 
 sub _is_stringish($thing) {
   my $class;
-  defined($thing) && ( 
+  defined($thing) && (
     (ref($thing) eq "")
     ||
     (defined($class = blessed($thing)) && overload::Method($class,'""'))
@@ -67,7 +70,7 @@ sub _global_init() {
     lock %schedulers;
 
     if (! $global_initialized) {
-      install_warn_hook();
+      _install_warn_hook();
       $global_initialized = 1;
     }
 }
@@ -86,7 +89,7 @@ sub fmt_jobid($self, $jobid, $longform=1) { # %$self must be locked
   }
   my ($subname,$args,$inputs,$outputs) = @$job{qw/subname args inputs outputs/};
   oops dvis '$jobid $job $self->{JOBS} $self->{FINISHED_JOBS}' unless defined $subname;
-  $longform 
+  $longform
     ? "$jobid: $subname(args=>".vis($args).",inputs=>".vis($inputs).",outputs=>".vis($outputs).")$finished"
     : "$jobid: $subname(...)$finished"
 }
@@ -120,11 +123,11 @@ oops unless defined $sema;
 # Create a token info hash, if it does not already exist,
 # at $self->{TOKENS}->{tokname} .
 #   Throws an error if the tokname is invalid.
-# If jobid_if_output is given, sets or updates {PRODUCER_JOBID} 
-#   if it is not already set (or the token is new), but 
+# If jobid_if_output is given, sets or updates {PRODUCER_JOBID}
+#   if it is not already set (or the token is new), but
 # Throws an error the token already exists with PRODUCER_JOBID set.
 # Returns a ref to the tokinfo hash
-sub _get_tokinfo($self, $tokname, $jobid_if_output=undef) { 
+sub _get_tokinfo($self, $tokname, $jobid_if_output=undef) {
   # %$self must be locked!
   if (! _is_stringish($tokname)) {
     confess "Token '",u($tokname),"' is not a string";
@@ -145,7 +148,7 @@ sub _get_tokinfo($self, $tokname, $jobid_if_output=undef) {
 
 sub Configure :prototype($@) ($class, @args) {
     oops unless eval{ $class->isa(__PACKAGE__) };
-    my %opts = (@args==1 ? (%{$args[0]}) : @args); 
+    my %opts = (@args==1 ? (%{$args[0]}) : @args);
     _check_on_main_thread();
     foreach (keys %opts) {
       # Previously we used a common thread pool for all Job Schedulers
@@ -172,13 +175,13 @@ sub new($class, %options) {
     $hash{FINISHED_JOBS} = &share({}); # jobid => { JOBS hash plus RESULT }
     $hash{QUEUED}    = &share({}); # jobid => 1
     $hash{TOKENS}    = &share({}); # all tokens we ever heard of:
-              # tokname => { PRODUCER => "description"
+              # tokname => { PRODUCER_JOBID => ...
               #              POISONED => boolean
               #              WAITING => [jobids waiting for it]
               #            }
     $hash{QUEUE}     = shared_clone( Thread::Queue->new() );
     $hash{JSEQ }     = 0;
-    
+
     my $numthreads = delete $options{NUMTHREADS};
     if (! defined $numthreads) {
       my $numcpus = $ENV{NUMBER_OF_PROCESSORS}
@@ -212,7 +215,7 @@ sub new($class, %options) {
 sub get_numthreads($self) { scalar( @{ $self->{TIDS} } ) }
 
 sub _canon_sema($sema) {
-  if (blessed($sema) && $sema->isa("Thread::Semaphore")) { 
+  if (blessed($sema) && $sema->isa("Thread::Semaphore")) {
     $sema = [$sema, 1];
   }
   elsif (ref($sema) eq "ARRAY" && (@$sema==2 || @$sema==3)
@@ -241,14 +244,14 @@ sub sched($self, %opts) {
     croak "context value must be 'list', 'scalar' or 'void' (not '$context')\n"
       unless $context =~ /^(?:list|scalar|void)$/;
     $job{context} = $context;
-    
+
     for my $key (qw/args inputs outputs/) {
       $job{$key} = shared_clone( delete($opts{$key}) // [] );
     }
-    $job{semas} = shared_clone( [ 
+    $job{semas} = shared_clone( [
                        # sort by mem addr to avoid deadlock
                        sort{ _get_Semaphore_id($a->[0]) <=> _get_Semaphore_id($b->[0]) }
-                       map{ _canon_sema($_) } 
+                       map{ _canon_sema($_) }
                        @{ delete($opts{semas}) // [] }
                   ] );
 
@@ -287,14 +290,13 @@ sub _run_queue_directly($self) {
     my $q = $self->{QUEUE};
     if ($q->pending) {
       warn "### serial mode, running jobs on main thread\n" if $debug;
-      while (defined (my $item = $q->dequeue_nb())) {
-          _run_workitem($item);
+      while (defined (my $jobid = $q->dequeue_nb())) {
+          $self->_run_workitem($jobid);
       }
     }
 }
 
-# TODO: Find all uses and get rid of old api and rename this "wait"
-sub wait2($self) {
+sub wait($self) {
     confess "Must be called on a Job Scheduler *OBJECT*\n" unless ref($self);
     lock $self;
     my $mytid = threads->tid();
@@ -303,7 +305,7 @@ sub wait2($self) {
         if( @{$self->{TIDS}} == 0 ) {
             $self->_run_queue_directly;
             # We can detect deadlock in serial mode!
-            if (my @lines = $self->unfinished_job_info) {
+            if (my @lines = $self->_unfinished_job_info) {
               confess "DEADLOCK?  Some job(s) never ran:\n", @lines;
             }
             last;
@@ -312,7 +314,7 @@ sub wait2($self) {
               my @jobids = keys %{$self->{JOBS}};
               btwbt ">>> [$mytid] wait: cond_wait %{ ",addrvis($self),"} (current jobs: @jobids) ...\n";
             }
-            cond_wait %$self;  # cond_broadcast at end of _run_workitem
+            cond_wait %$self;  # cond_broadcast at end of _run_job
             btwbt ">>> [$mytid] back from cond_wait" if $debug;
         }
     }
@@ -339,20 +341,10 @@ sub wait2($self) {
     btwbt ">>> [$mytid] wait returning ${\(visnew->Refaddr(1)->vis($result))}" if $debug;
     return $result
 }
-sub wait($self) { # DEPRECATED compatibility wrapper with old api
-    if (! defined wantarray) {
-      $self->wait2();
-    } else {
-      my $r = $self->wait2();
-      # Old API: Return hash mapping
-      #   jobid => result 
-      return { map{ ($_ => $r->{$_}->{RESULT}) } keys %$r }
-    }
-}
 
-sub abort_job {
-    my ($self, $jobid) = @_;
+sub abort_job($self, $jobid, $msg="") {
     lock $self;
+    $msg = ":$msg" if $msg;
     my $job = $self->{JOBS}->{$jobid};
     if (! $job) {
       return 1 if exists $self->{FINISHED_JOBS}->{$jobid};
@@ -360,24 +352,57 @@ sub abort_job {
     }
     if (my $tid = $job->{TID}) {
       btwbt ">>> abort_job: KILLING ",$self->fmt_jobid($jobid,0)," on tid $tid\n" if $debug;
+      $job->{ABORTMSG} //= "[killed by abort_job${msg}]";
       threads->object($tid)->kill('SIGTERM');
     } else {
       btwbt ">>> abort_job: CANCELLING ",$self->fmt_jobid($jobid,0)," ...\n" if $debug;
-      $job->{ABORTMSG} = "[cancelled by abort_job()]";
+      $job->{ABORTMSG} //= "[cancelled before running by abort_job${msg}]";
       $self->_enqueue_if_ready([$jobid]) unless $self->{QUEUED}->{$jobid};
     }
     # The job still exists; you must call 'wait' to clean it up.
     #
     # If executing, the job was signaled and will stop promptly.
-    # If still queued, it will start as soon as a worker thread becomes 
+    # If still queued, it will start as soon as a worker thread becomes
     # available and then immediately abort without calling the user's code.
+    return 0;
 }
 
-sub abort_all_jobs($self) {
-    lock $self;
-    foreach my $jobid (keys %{$self->{JOBS}}) {
-      $self->abort_job($jobid);
+sub delete_tokens($self, @toknames_to_delete) {
+  lock $self;
+  my $my_jobid = my_jobid()//"";
+  foreach my $job (values %{$self->{JOBS}}) {
+    if ($job->{JOBID} ne $my_jobid) { # ok to delete our own input
+      foreach my $tokname (@{$job->{inputs}}) {
+        if (any{ $_ eq $tokname } @toknames_to_delete) {
+          croak "Can not delete token '$tokname' because it is an input token for unfinished job $job->{JOBID}";
+        }
+      }
+      foreach my $tokname (@{$job->{outputs}}) {
+        if (any{ $_ eq $tokname } @toknames_to_delete) {
+          croak "Can not delete token '$tokname' because it is an output token for unfinished job $job->{JOBID}";
+        }
+      }
     }
+  }
+  for my $tokname (@toknames_to_delete) {
+    my $tokinfo = $self->{TOKENS}->{$tokname}
+       // croak "'$tokname' is an unknown token name";
+    if (! $tokinfo->{PRODUCED}) {
+      oops dvis 'BUG: $tokname was never PRODUCED\n$tokinfo';
+    }
+    for my $dependent (grep{defined} @{ $tokinfo->{WAITING} }) {
+      oops dvis 'BUG: $tokname : $dependent is WAITING \n$tokinfo';
+    }
+    if (exists $tokinfo->{POISONED}) {
+      # nothing special to do?
+    }
+    oops "unimplemented" ### FIXME
+  }
+}
+
+sub all_jobids($self) {
+  lock $self;
+  return( keys %{$self->{JOBS}}, keys %{$self->{FINISHED_JOBS}} );
 }
 
 # Wait for any remaining jobs to complete, shut down threads, and delete
@@ -402,7 +427,7 @@ sub delete($self) {
       my $thr = threads->object($tid);
       oops if $thr->is_detached();
       btw ">>>     joining tid $tid ...\n" if $debug;
-      $thr->join(); 
+      $thr->join();
       btw ">>>     tid $tid has joined\n" if $debug;
     }
     oops dviso '$self' if keys %{$self->{QUEUED}};
@@ -414,12 +439,12 @@ sub delete($self) {
     delete $schedulers{$self->{WSID}} // oops;
 }
 
-sub has_unfinished_jobs($self) {
+sub _has_unfinished_jobs($self) {
     $self->_run_queue_directly if @{$self->{TIDS}} == 0;
     lock $self;
-    return scalar %{ $self->{JOBS} } 
+    return scalar %{ $self->{JOBS} }
 }
-sub unfinished_job_info($self) {
+sub _unfinished_job_info($self) {
     # Returns a list of strings, one per waiting job
     $self->_run_queue_directly if @{$self->{TIDS}} == 0;
     my @result;
@@ -438,7 +463,7 @@ sub unfinished_job_info($self) {
                      ." has unsatisfied inputs (never produced): "
                      .join(", ", @unsatisfied_inputs)
                      ."\n";
-      } 
+      }
       elsif ($self->{QUEUED}->{$jobid}) {
         push @result, $self->fmt_jobid($jobid,0)
                      ." is enqueued, waiting for a free thread.\n";
@@ -458,7 +483,7 @@ sub unfinished_job_info($self) {
 sub _abort_if_jobs_remain($self) {
     lock $self;
     if (%{ $self->{JOBS} }) {
-      my @descrips = $self->unfinished_job_info();
+      my @descrips = $self->_unfinished_job_info();
       oops unless @descrips;  # jobs remain but none are waiting for anything
       # Nevertheless, I think this still implies a bug in Job Scheduler!
       confess "Some job(s) never ran:\n", @descrips;
@@ -511,6 +536,22 @@ sub _enqueue_if_ready ($self, $jobids) { # Job Scheduler must be locked
         my @got_semas;
         CHECK: {
           last CHECK if $job->{ABORTMSG};
+          foreach my $tokname (@{$job->{inputs}}) {
+            my $tokinfo = $self->{TOKENS}->{$tokname} // oops;
+            if (exists $tokinfo->{POISONED}) {
+              $job->{ABORTMSG} = "[cancelled: need '$tokname' from aborted job $tokinfo->{PRODUCER_JOBID}]";
+              btw "Start ${jobid}: input token '$tokname' was poisoned\n" if $debug;
+              last;
+            }
+            elsif ($tokinfo->{PRODUCED}) {
+              btw "Start ${jobid}: input '$tokname' is ready\n" if $debug;
+            }
+            else {
+              push @unavail_inputs, $tokname;
+              last CHECK unless $debug; # check all if tracing
+              btw "Start ${jobid}: input '$tokname' is has not yet been produced\n" if $debug;
+            }
+          }
           foreach my $sema (@{$job->{semas}}) {
             my ($s, $down_count, $up_count) = @$sema;
             next if $down_count == 0;
@@ -524,31 +565,15 @@ sub _enqueue_if_ready ($self, $jobids) { # Job Scheduler must be locked
             }
           }
           # semas will be "up"d in _wrapup_job
-          foreach my $tokname (@{$job->{inputs}}) {
-            my $tokinfo = $self->{TOKENS}->{$tokname} // oops;
-            if (exists $tokinfo->{POISONED}) {
-              $job->{ABORTMSG} = "[cancelled due to aborted precursor '$tokname']";
-              btw "Start ${jobid}: input token '$tokname' was poisoned\n" if $debug;
-              last;
-            }
-            elsif ($tokinfo->{PRODUCED}) {
-              btw "Start ${jobid}: input '$tokname' is ready\n" if $debug;
-            }
-            else {
-              push @unavail_inputs, $tokname;
-              last CHECK unless $debug; # check all if tracing
-              btw "Start ${jobid}: input '$tokname' is has not yet been produced\n" if $debug;
-            }
-          }
         }
-        if (@unavail_semas or @unavail_inputs or $job->{ABORTMSG}) {
+        if (@unavail_inputs or @unavail_semas or $job->{ABORTMSG}) {
           for my $sema (@got_semas) {
             my ($s, $down_count) = @$sema;
             $s->up($down_count); # un-do
-            btw "Start ${jobid}: \"un-downed\" (because of another condition) ", _fmt_sema($sema),"\n" if $debug;
+            btw "Start ${jobid}: \"un-downed\" (due to unready condition) ", _fmt_sema($sema),"\n" if $debug;
           }
           if ($job->{ABORTMSG}) {
-            $self->_wrapup_job($job, 0); 
+            $self->_wrapup_job($job, 0);
             next JOB;
           }
           if ($debug) {
@@ -562,7 +587,7 @@ sub _enqueue_if_ready ($self, $jobids) { # Job Scheduler must be locked
           next JOB
            if (@unavail_semas or @unavail_inputs);
            # Aborted jobs are queued and fake-executed...
-        
+
         }
 
         btwbt "### [$tid] Enqueuing ",$self->fmt_jobid($jobid,0),"\n" if $debug;
@@ -580,8 +605,7 @@ sub _enqueue_if_ready ($self, $jobids) { # Job Scheduler must be locked
         }
 
         my $q = $self->{QUEUE};
-        my $item = shared_clone([$self->{WSID}, $jobid]);
-        $q->enqueue($item);
+        $q->enqueue($jobid);
     }
 }#_enqueue_if_ready
 
@@ -595,7 +619,7 @@ sub _set_aborted_job_result($job) {
 
 # Call user's code (unless ABORTMSG is set) with a signal handler, etc.
 # job->{TID} is set around the call and removed before returning.
-sub _call_usersub($tid, $jobsch, $job) {
+sub _call_usersub($self, $tid, $job) {
     local $SIG{__WARN__} = $SIG{__WARN__};
     local $SIG{__DIE__} = $SIG{__DIE__};
     # localize these to simulate thread effects in SERIAL mode
@@ -604,63 +628,61 @@ sub _call_usersub($tid, $jobsch, $job) {
     $@ = "";
 
     scope_guard {
-      lock $jobsch;
+      lock $self;
       delete $job->{TID};
     };
 
-    local $SIG{'TERM'} = sub ($sig,@) { 
-      lock $jobsch;
+    local $SIG{'TERM'} = sub ($sig,@) {
+      lock $self;
       $job->{KILLED} = 1;
       die "$curr_jobid aborted (caught SIG${sig})\n";
     };
 
     my $subname = $job->{subname} // oops viso($job);
-    { lock $jobsch;
+    { lock $self;
       oops if $job->{KILLED};
       oops if exists $job->{TID};
-      oops dviso('$jobsch') unless delete $jobsch->{QUEUED}->{$curr_jobid};
-      return 
+      oops dviso('$self') unless delete $self->{QUEUED}->{$curr_jobid};
+      return
         if $job->{ABORTMSG};
       $job->{TID} = $tid;
     }
-    
+
     # user's sub is called in whatever context we are called in
-    no strict 'refs'; 
-    &$subname(js => $jobsch,
+    no strict 'refs';
+    &$subname(js => $self,
               args => $job->{args},
               inputs => $job->{inputs},
               outputs => $job->{outputs},
              );
 }
 
-sub _run_workitem($item) {
-    my ($jobschid, $jobid) = @$item;
-    my $jobsch = $schedulers{$jobschid} // oops;
+sub _run_job($self, $jobid) {
     my $tid = threads->tid();
-    
+
     my ($job, $context);
-    { lock $jobsch;
-      $job = $jobsch->{JOBS}->{$jobid} // oops;
+    { lock $self;
+      $job = $self->{JOBS}->{$jobid} // oops;
       $context = $job->{context};
-      btw "[$tid] EXECUTING ",$jobsch->fmt_jobid($jobid,0),"\n" if $debug;
+      btw "[$tid] EXECUTING ",$self->fmt_jobid($jobid,0),"\n" if $debug;
       confess "bug" if defined $curr_job;
     }
 
-    # _call_usersub returns *unless* ABORTMSG is set.
+    # _call_usersub returns immediately if ABORTMSG is set.
     my $result;
     if ($context eq "void") {
-      eval{ _call_usersub($tid, $jobsch, $job); };
+      eval{ $self->_call_usersub($tid, $job); };
       $result = "(nothing:void context)";
     }
     elsif ($context eq "scalar") {
-      $result = eval{ _call_usersub($tid, $jobsch, $job); };
+      $result = eval{ $self->_call_usersub($tid, $job); };
     }
     elsif ($context eq "list") {
-      $result = [ $result = eval{ _call_usersub($tid, $jobsch, $job); } ];
+      $result = [ eval{ $self->_call_usersub($tid, $job); } ];
     }
     else { oops };
 
-    lock $jobsch;
+    lock $self;
     my $abortmsg = $job->{ABORTMSG};
     unless ($abortmsg) {
       $abortmsg = "[killed]" if $job->{KILLED};
@@ -671,43 +693,43 @@ sub _run_workitem($item) {
         } else {
           chomp $ex;
           $abortmsg //= "[died: $ex]";
-        } 
+        }
       }
       if ($debug && !$abortmsg) {
         btw "[$tid] $jobid ",$job->{subname}," returned ",vis($result)," ($context context)\n";
-      } 
+      }
     }#not already aborting
 
     oops dvis '$job' if exists $job->{RESULT};
     if ($abortmsg) {
-      btw "### [$tid] $jobid : $abortmsg\n" if $debug;
-      # setting $result to an explanatory string looks nice for debugging, 
-      # but violates the API which says undef or [] will be returned for 
+      btw "### [$tid] $jobid : ABORTMSG:=$abortmsg\n" if $debug;
+      $job->{ABORTMSG} = $abortmsg;
+      # setting $result to an explanatory string looks nice for debugging,
+      # but violates the API which says undef or [] will be returned for
       # aborted or cancelled jobs.
       #$result = $abortmsg;
-      $job->{ABORTMSG} = $abortmsg;
       _set_aborted_job_result($job);
     } else {
       $job->{RESULT} = shared_clone($result) unless $context eq "void";
     }
-    $jobsch->_wrapup_job($job, 1);
+    $self->_wrapup_job($job, 1);
 
     if ($debug) {
-      my @jobids = keys %{$jobsch->{JOBS}};
-      btw "### [$tid] $jobid cond_broadcast ",addrvis($jobsch)," (curr jobs: @jobids) ...";
+      my @jobids = keys %{$self->{JOBS}};
+      btw "### [$tid] $jobid cond_broadcast ",addrvis($self);
     }
-    cond_broadcast %$jobsch;
-}#_run_workitem
+    cond_broadcast %$self;
+}#_run_job_
 
-sub _wrapup_job($jobsch, $job, $up_semas) {
-    # %$jobsch must be locked
+sub _wrapup_job($self, $job, $up_semas) {
+    # $self must be locked
     my $jobid = $job->{JOBID};
     my $abortmsg = $job->{ABORTMSG};
 
     my @dependent_jobids; # dups ok
 
     foreach my $tokname (@{ $job->{outputs} }) {
-      my $tokinfo = $jobsch->{TOKENS}->{$tokname} // oops;
+      my $tokinfo = $self->{TOKENS}->{$tokname} // oops;
       oops dvis '$tokinfo' unless $tokinfo->{PRODUCER_JOBID} eq $jobid;
       oops if exists $tokinfo->{PRODUCED};
       $tokinfo->{PRODUCED} = 1;
@@ -715,9 +737,9 @@ sub _wrapup_job($jobsch, $job, $up_semas) {
 
       if ($abortmsg) {
         $tokinfo->{POISONED} = 1;
-        btw "'$tokname' POISONED by ", $jobsch->fmt_jobid($jobid), ":$abortmsg\n" if $debug;
+        btw "'$tokname' POISONED by ", $self->fmt_jobid($jobid), ":$abortmsg\n" if $debug;
       } else {
-        btw "'$tokname' produced by ", $jobsch->fmt_jobid($jobid), "\n" if $debug;
+        btw "'$tokname' produced by ", $self->fmt_jobid($jobid), "\n" if $debug;
       }
     }
     if ($up_semas) {
@@ -729,11 +751,11 @@ sub _wrapup_job($jobsch, $job, $up_semas) {
         }
       }
     }
-    oops if $jobsch->{FINISHED_JOBS}->{$jobid};
-    delete( $jobsch->{JOBS}->{$jobid} );
-    $jobsch->{FINISHED_JOBS}->{$jobid} = $job;
+    oops if $self->{FINISHED_JOBS}->{$jobid};
+    delete( $self->{JOBS}->{$jobid} );
+    $self->{FINISHED_JOBS}->{$jobid} = $job;
 
-    $jobsch->_enqueue_if_ready(\@dependent_jobids);
+    $self->_enqueue_if_ready(\@dependent_jobids);
 }#_wrapup_job
 
 sub my_jobid() {
@@ -742,17 +764,17 @@ sub my_jobid() {
   return $curr_jobid;
 }
 sub _thread_main($jobschid) {
-    install_warn_hook();
+    _install_warn_hook();
     my $jobsch = $schedulers{$jobschid} // oops;
     btwbt "tid ",threads->tid(),ivis ': _thread_main($jobschid) starting...\n' if $debug;
     my $queue = $jobsch->{QUEUE};
     for (;;) {
       btwbt "[",threads->tid(),"] dequeue... (curr. ",
                                   $queue->pending()," items)" if $debug;
-      my $item = $queue->dequeue();
-      last if ! defined $item;
-      btw "[",threads->tid(),"] dequeued ",vis($item) if $debug;
-      _run_workitem($item);
+      my $jobid = $queue->dequeue();
+      last if ! defined $jobid;
+      btw "[",threads->tid(),"] dequeued $jobid" if $debug;
+      $jobsch->_run_job($jobid);
     }
     btw "[",threads->tid(),"] EOF msg from queue\n" if $debug;
 }
@@ -775,46 +797,47 @@ Threads::DependentJob - Run interdependent jobs using a pool of worker threads
   sub do_work_func(...) {
     ... consume whatever is represented by input tokens ...
     ... produce whatever is represented by output tokens ...
-    return $scalar; # may be a ref
+    return ...;
   }
 
   my $sema = Thread::Semaphore->new(3);
 
-  $jobsch->sched(subname => "do_work_func", 
+  $jobsch->sched(subname => "do_work_func",
                  args    => [arguments for &do_work_func],
-                 inputs  => [input tokens], 
+                 inputs  => [input tokens],
                  outputs => [output tokens]),
                  semas   => [$sema],
+                 context => "list"|"scalar"|"void",
                 );
   $jobsch->sched( ... );
   $jobsch->sched( ... );
 
-  my $results = $jobsch->wait(); 
+  my $results = $jobsch->wait();
   foreach my $jobid (keys %$results) {
     print "Job $jobid returned ", $results->{$jobid}, "\n";
   }
 
 =head1 DESCRIPTION
 
-This package allows self-contained "jobs" to be executed concurrently, 
-initiated using an arbitrary graph of dependencies. 
+This package allows self-contained "jobs" to be executed concurrently,
+initiated using an arbitrary graph of dependencies.
 
 A single pool of "worker" threads is used to execute all jobs.
 
 Each job has sets of input and output "tokens".  A job will not
-start until its input tokens are available, 
+start until its input tokens are available,
 and upon termination (normal or abnormal), it's output tokens are produced.
 
 Jobs may also be regulated by semaphore(s), which are "downed" when the job
 starts and "upped" at completion.
 
-NOTE: Jobs may not depend on each other while running, i.e., 
-once started a job must complete regardless of other job activity
-I<The only way to coordinate jobs is for a common predecessor job 
+NOTE: Jobs may not depend on each other while running, i.e.,
+once started a job must complete regardless of what other jobs do.
+I<The only way to coordinate jobs is for a common predecessor job
 (or the main program) to schedule the jobs with appropriate token dependencies.>
 
-See C<perldoc threads> for limitations of the thread model.  
-In particular, C<chdir> is global and affects all threads, 
+See C<perldoc threads> for limitations of the thread model.
+In particular, C<chdir> is global and affects all threads,
 and C<system> et. al. always use the main thread's %ENV.
 
 =head2 Aborting Jobs
@@ -822,10 +845,10 @@ and C<system> et. al. always use the main thread's %ENV.
 Jobs may terminate abnormally by calling die() in the usual way.
 Jobs should never call exit(), as the entire process will terminate.
 
-If a job dies or is aborted (see C<< $jobsch->abort(...) >>),
+If a job dies or is aborted (see C<< abort_job >>),
 it's output tokens are immediately produced but
-marked as "poisoned", and other jobs which depend on them 
-will be cancelled with warning messages.
+marked "poisoned", and other jobs which depend on them
+will be cancelled.
 
 =head2 $jobsch = Threads::DependentJob->new(OPTIONS);
 
@@ -837,11 +860,13 @@ Create a job scheduler object.  Options are key => value pairs.
 
 =item NUMTHREADS => $number
 
-Set the number of worker threads.
-The default (or if undef is specified) is 1 greater than the number of CPUs.
+=item NUMTHREADS => 0
 
-If zero is specified, concurrent threads are not used and jobs are executed
-sequentially when C<< $jobsch->wait >> is called.  
+Set the number of worker threads.
+The default is 1 greater than the number of CPUs.
+
+If zero is specified then concurrent threads are not used and jobs are executed
+sequentially when C<< $jobsch->wait >> is called.
 This is useful for debugging.
 
 =back
@@ -849,42 +874,43 @@ This is useful for debugging.
 C<Configure> global options may also be passed to C<new>, but still affect
 all Job Schedulers.
 
-=head2 $jobid   = $jobsch->sched(...)
+=head2 $jobid   = $jobsch->sched(PARAMETERS)
 
-=head2 ($jobid) = $jobsch->sched(...)
+=head2 ($jobid) = $jobsch->sched(PARAMETERS)
 
 Schedule a job to run when specified inputs and semaphores are available
-and which produces specified outputs 
-(jobs with no inputs or semaphores can can start immediately).  
-Parameters are given as key => value pairs:
+and which produces specified outputs
+(with no inputs or semaphores the job can can start immediately).
+
+PARAMETERS are key => value pairs:
 
 =over
 
 =item subname => "name" (required)
 
 The name of the function to be called on a worker thread (a sub ref will not work).
-The function must be in the caller's package unless the name
-includes package:: qualifiers.
+It must be in the caller's package unless package:: qualifiers are included.
 
 The function will be called as follows:
 
 =over
 
- name(args => [args], inputs => [inputs], outputs => [outputs], 
-      js => WorschedulerObject)
+ name(args => [args], inputs => [inputs], outputs => [outputs],
+      js => job_scheduler_object)
 
 =back
 
 The first three parameters are the corresponding C<sched> parameter values
 (actually the results of calling C<shared_clone>).
 
-The I<context> of the function call
-(list, scalar, or void) is determined 
-by the 'context' option or by the context of the call to C<< $jobsch->sched(...) >>.
+The I<context> of the function call (list, scalar, or void)
+is determined by the 'context' parameter, if specified,
+otherwise the context of the call to C<< $jobsch->sched(...) >>.
+This contols how return values are handled, see C<<wait>>.
 
 =item args => [...]
 
-"User" arguments for the function. 
+"User" arguments for the function.
 
 =item inputs => [token,...]
 
@@ -899,12 +925,12 @@ The tokens which are implicitly produced when this job finishes.
 Semaphores which are all "downed" when the job starts, deferring
 the job until that is possible; and "upped" when the job completes.
 
-Each B<SEMSPEC> may be a Thread::Semaphore object ref (which will be downed/upped by 1)
+Each B<SEMSPEC> may be just a Thread::Semaphore object ref (which will be downed/upped by 1)
 or a tuple [semaphore, down_up_count] or [semaphore, down_count, up_count].
 
 =item context => "list" | "scalar" | "void"
 
-The context to use when calling B<subname>.  
+The context to use when calling B<subname>.
 In the function, I<wantarray> will be true, false, or undefined respectively.
 
 If not specified, "list" context is assumed if $jobsch->sched() is called in
@@ -922,16 +948,15 @@ when C<< $jobsch->wait() >> is called.
 =head3 B<Tokens>
 
 Tokens are arbitrary strings.
-For example, if a job writes a file to be read by subsequent job(s), 
+For example, if a job writes a file to be read by subsequent job(s),
 the pathname might be used as the corresponding token.
 
 Tokens may be produced only once but consumed any number of times.
-That is to say: They may (actually: must) be an output token for a single job 
+That is to say: They may (actually: must) be an output token for a single job
 but may be an input token for any number of dependent jobs.
 
-Tokens may (but need not) be explicitly forgotten when 
-no longer needed (see I<delete_tokens>).
-Thereafter their identifiers may be re-used.
+Tokens may (but need not) be explicitly forgotten when
+no longer needed using I<delete_tokens>.
 
 =head3 B<Semaphores>
 
@@ -942,45 +967,62 @@ of disk-intensive jobs to prevent thrashing.  This could be done
 using a semaphore initialized to the maximum concurrency allowed,
 and specifying that semaphore when scheduling disk-intensive jobs.
 
-A job can start only when its semaphore(s) can all be immediately "downed" by 1 
-(or by the indicated count) without becoming negative.  
-When a job finishes, it's semaphores are "upped" (by 1 or the indicated count).  
+A job can start only when its semaphore(s) can all be immediately "downed" by 1
+(or by the indicated count) without becoming negative.
+When a job finishes, it's semaphores are "upped" (by 1 or the indicated count).
 
-=head2 $results = $jobsch->wait2();
+=head2 $results = $jobsch->wait();
 
-Wait until all jobs (managed by Threads::DependentJob B<$jobsch>) have completed.
+Wait until all jobs (managed by Threads::DependentJob instance B<$jobsch>) have completed.
 
 If called in void context (i.e. the results will not be examined), then warnings
 are issued about any jobs which aborted.  Silent if called in non-void context.
 
-The return value is a ref to a hash which maps
-    
-    jobid => {RESULT => value, 
+The return value is a ref to a hash with these members:
+
+    jobid => {RESULT => value | [list of values],
               ABORTMSG => "...",
-              EXCEPRION => "...",
-             } # + other undocumented keys
- 
-RESULT gives the return value from the job function specified when scheduled.
+              EXCEPTION => anything,
+             }
+
+RESULT gives the return value from the function specified when scheduling the job.
 If the job had "list" context (see C<< sched >>), the RESULT value will be
-a ref [items...] to a list of return values.  
+an array reference to the values returned.
 If the job had void context RESULT will be absent.
 
-ABORTMSG will be a non-empty explanatory string if the job terminated abnormally
-or could not be started, either due to an exception (calling 'die'), 
-if externally aborted via C<abort>,
-or if it depended on a 'poisoned' input token produced by an aborted job.
+ABORTMSG will be an explanatory string if the job terminated abnormally for
+any reason.  The reasons include:
 
-If the job died, EXCEPTION will also be set to the argument to die ($@), 
-or rather a shared_clone of it.   This could be an object.
+=over
+
+=item 1)
+
+B<< The job called C<die> >>:  String(s) passed to 'die' will be included in ABORTMSG.
+EXCEPTION will contain exactly $@, or rather a shared_clone of it (could be an object
+or unblessed container).
+
+=item 2)
+
+B<< The job depended on a poisoned input >>.
+This occurs if an 'input' token was to be produced by a precursor job which itself aborted.
+
+=item 3)
+
+B<<< C<< abort_job() >> was called for the job. >>>
+
+=back
 
 If jobs schedule other jobs, C<< $jobsch->wait() >> will wait until
 all of them complete.
 
-=head2 $results = $jobsch->wait();
+=head2 $jobsch->abort_job($jobid, [$msg]);
 
-A deprecated API which returns results in a different form.
+Nothing is done if the job has already completed.
+Otherwise the job is killed if running or cancelled if not yet started, and ABORTMSG set
+in the job's result hash (see C<wait>).  If B<$msg> is provided it will be included
+in the ABORTMSG string.
 
-TODO: Rename wait2 to wait and find and fix all existing uses...
+Returns true if the job was cancelled or killed, false if the job was already complete.
 
 =head2 $jobsch->delete_tokens(token)
 
@@ -990,26 +1032,38 @@ Tokens must be unique and by default may not be re-used.
 A fatal error occurs if an attempt is made to produce the same token twice.
 
 C<< delete_tokens >> may be called to forget tokens which can no longer
-influence any scheduled job; thereafter the same identifier strings may be 
+influence any scheduled job; thereafter the same identifier strings may be
 used for new tokens.  It is not necessary to do this unless
 the same token string must be re-used, or to reduce memory usage.
 
 A running job may delete it's own input tokens, but otherwise tokens
 used by incomplete jobs may not be deleted.
 
-In practice, B<delete_tokens> may only be by 
+In practice, B<delete_tokens> may only be by
 called by the main thread after return from C<< $jobsch->wait >>,
-or from a job which consumes (specifies as it's inputs) 
+or from a job which consumes (specifies as it's inputs)
 an output token from every other job which might not yet be complete.
+
+=head2 @jobids = $jobsch->all_jobids()
+
+Returns the identifiers for all jobs which have not been "reaped" by
+calling C<< $jobsch->wait() >>.
 
 =head2 $jid = my_jobid()
 
 Returns the current job's jobid, or undef if not called from a running job.
 
+=head2 $jobsch->delete()
+
+Waits for any incomplete jobs to finish, and issues warnings about failed jobs (see C<wait>).
+Then internal references are broken, allowing the job-scheduler object to be destroyed.
+
+This is not normally necessary, as it is done implicitly at process exit.
+
 =head2 Threads::DependentJob->Configure(global_options...)
 
 Set global options, which affect all job scheduler instances.
-These options may also be passed to C<< Threads::DependentJob->new >> 
+These options may also be passed to C<< Threads::DependentJob->new >>
 but affect all instances.
 
 =over
@@ -1023,6 +1077,8 @@ If true, NUMTHREADS defaults to zero (see C<sched>).
 If true, trace messages are printed.
 
 =back
+
+=for Pod::Coverage fmt_jobid get_numthreads
 
 =cut
 
@@ -1056,11 +1112,11 @@ sub inner($&) {
   #warn dvis '# # # inner: $n @sidechannel\n';
   #sleep(5);
   my ($inputs,$outputs) = @{ $sidechannel[$n] };
-  my $outer_name = (caller(1))[3]; 
-  my $tid = threads->tid(); 
+  my $outer_name = (caller(1))[3];
+  my $tid = threads->tid();
   my $jobid = my_jobid();
   { lock $Threads::DependentJob::warnlock;
-    warn ivis "[tid $tid] jobid $jobid: ${outer_name}\@\$args Starting...\\n"; 
+    warn ivis "[tid $tid] jobid $jobid: ${outer_name}\@\$args Starting...\\n";
     if ($jobids_seen{$jobid}) { warn "jobid used previously!?!"; exit 1; }
     $jobids_seen{$jobid} = 1;
     foreach (@$inputs) {
@@ -1078,7 +1134,7 @@ sub inner($&) {
   }
   &$code();
   { lock $Threads::DependentJob::warnlock;
-    warn ivis "[tid $tid] jobid $jobid: ${outer_name}\@\$args Finishing...\\n"; 
+    warn ivis "[tid $tid] jobid $jobid: ${outer_name}\@\$args Finishing...\\n";
     foreach (@$outputs) {
       next if ref;
       if (my $ojobid = $resources{$_}) {
@@ -1102,10 +1158,10 @@ sub task9      { inner(\@_, \&eat); 900 }
 sub taskN      { inner(\@_, \&eat); "N res" }
 sub diertask   { inner(\@_, \&eat); die "Die from job"; "should have died" }
 sub indep_task { inner(\@_, \&eat); "indep res" }
-sub loopertask { inner(\@_, sub { 
-                              while(1) { 
-                                warn "loopertask sleeping...\n"; sleep(2); 
-                              } 
+sub loopertask { inner(\@_, sub {
+                              while(1) {
+                                warn "loopertask sleeping...\n"; sleep(2);
+                              }
                             }); "should not return normally" }
 
 confess "bug" if defined my_jobid();
@@ -1130,7 +1186,7 @@ sub run_tests($) {
   $jobsch = Threads::DependentJob->new($opts);
   warn "TESTER: Created Job Scheduler $jobsch\n";
   confess "bug" if defined my_jobid;
-  
+
   dosched([],[],'task1',[qw(sleepy brown fox)]);
   $jobsch->wait2();
 
@@ -1152,18 +1208,18 @@ sub run_tests($) {
   #}
   confess "bug" if defined my_jobid;
   threads->yield();
-  
+
   $jobsch->produce('bogus token');
   threads->yield();
-  
+
   $resources{'the first tok'} = 1;
   $jobsch->produce('the first tok');
-  
-  warn "TESTER: Unfinished jobs (first showing):\n", $jobsch->unfinished_job_info();
+
+  warn "TESTER: Unfinished jobs (first showing):\n", $jobsch->_unfinished_job_info();
   $jobsch->abort_job($looper_jobid);
-  
-  while ($jobsch->has_unfinished_jobs()) {
-    my @descrips = $jobsch->unfinished_job_info();
+
+  while ($jobsch->_has_unfinished_jobs()) {
+    my @descrips = $jobsch->_unfinished_job_info();
     warn "TESTER: Unfinished jobs remain:\n",@descrips,
          "\nCalling yield a million times...\n";
     for (0..1000000) { threads->yield(); }
@@ -1171,15 +1227,15 @@ sub run_tests($) {
     sleep 1;
   }
   #warn "TESTER: sleep 2...\n"; sleep(2);
-  
+
   # old api...
   #my $results = $jobsch->wait();
   #print dvis '$results\n%jobids_seen\n';
-  
+
   my $finished_jobs = $jobsch->wait2();
   print dvis '$finished_jobs\n%jobids_seen\n';
   my $results = { map{ ($_ => $finished_jobs->{$_}->{RESULT}) } keys %$finished_jobs };
-  
+
   confess "bug" if defined my_jobid;
   foreach my $jid (keys %$results) {
     die "bug" unless exists $jobids_seen{$jid} or $jid eq $looper_jobid;

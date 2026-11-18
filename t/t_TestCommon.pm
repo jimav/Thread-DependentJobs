@@ -101,7 +101,7 @@ our @EXPORT = qw/silent
                  tmpcopy_if_writeable
                  my_capture my_capture_merged my_tee_merged
                 /;
-our @EXPORT_OK = qw/$savepath $debug $silent $verbose %dvs 
+our @EXPORT_OK = qw/$savepath $debug $silent $verbose %dvs
                     dprint dprintf ts tsstr/;
 
 use Import::Into;
@@ -136,10 +136,10 @@ BEGIN {
 sub ts() { defined($start_time) ? (&Time::HiRes::time() - $start_time) : 0 }
 sub tsstr() { defined($start_time) ? sprintf("%.3f", ts()) : "" }
 
-sub bug(@args) { 
+sub bug(@args) {
   no warnings 'experimental::args_array_with_signatures';
-  @_=("BUG FOUND:",@args); 
-  goto &Carp::confess 
+  @_=("BUG FOUND:",@args);
+  goto &Carp::confess
 }
 
 # Parse manual-testing args from @ARGV

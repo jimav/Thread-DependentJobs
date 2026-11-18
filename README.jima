@@ -1,0 +1,25 @@
+This is maintained using Dist::Zilla
+----------------
+
+dzil clean; dzil build && dzil test
+
+dzil release  # now auto-updates version, commits, pushes, and uploads
+
+V=2.3.0 dzil release # force version 2.3.0
+
+----------------
+
+Git book: https://git-scm.com/book/en/v2
+
+----------------
+git tag -a v2.18 -m "my version 2.18" # Full bodied "Annotated" tag
+----------------
+git describe [HEAD is default] prints closest "tag-#-gitobj" 
+git show <tag-#-gitobj>:<filepath> prints specified version of that file
+----------------
+
+https://cpantesters.org/distro/D/Thread-DependentJobs.html
+
+##http://matrix.cpantesters.org/?dist=Thread-DependentJobs
+https://fast2-matrix.cpantesters.org/?dist=Thread-DependentJobs
+
