@@ -7,7 +7,7 @@ our @ISA       = qw(Exporter);
 our @EXPORT    = qw(my_jobid);
 our @EXPORT_OK = qw();
 
-{ no strict 'refs'; ${__PACKAGE__."::VER"."SION"} = 997.999; }
+{ no strict 'refs'; ${__PACKAGE__."::VER"."SION"} //= 997.999; }
 # VERSION from Dist::Zilla::Plugin::OurPkgVersion
 # DATE from Dist::Zilla::Plugin::OurDate
 
