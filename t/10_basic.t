@@ -18,8 +18,8 @@ STDERR->autoflush();
 STDOUT->autoflush();
 set_logdest(\*STDOUT);
 
-use Threads::DependentJobs;
-Threads::DependentJobs->Configure(DEBUG => $debug);
+use Thread::DependentJobs;
+Thread::DependentJobs->Configure(DEBUG => $debug);
 use Thread::Semaphore ();
 
 my %created :shared;
@@ -30,7 +30,7 @@ my %copied_outputs :shared;
 {
 my $sema1 = Thread::Semaphore->new() // oops; # default count==1
 
-my $jobsch = Threads::DependentJobs->new(NUMTHREADS => undef);
+my $jobsch = Thread::DependentJobs->new(NUMTHREADS => undef);
 note "Created job scheduler having ",$jobsch->get_numthreads, " threads.\n";
 
 note "Created ws ",addrvis($jobsch);

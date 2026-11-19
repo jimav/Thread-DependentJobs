@@ -1,7 +1,7 @@
 use strict; use warnings; use feature qw(say state signatures);
 # vi:set ai expandtab ts=4:
 
-package Threads::DependentJobs;
+package Thread::DependentJobs;
 
 our @ISA       = qw/Exporter/;
 our @EXPORT    = ();
@@ -155,7 +155,7 @@ sub Configure :prototype($@) ($class, @args) {
       # and so NUMTHREADS was accepted here.  No longer.
       if (/^DEBUG$/)  { $debug = delete $opts{$_}; }
       elsif (/^ALLSERIAL$/)  { $allserial = delete $opts{$_}; }
-      else  { croak "Invalid Threads::DependentJob->Configure option '${_}'\n"; }
+      else  { croak "Invalid Thread::DependentJob->Configure option '${_}'\n"; }
     }
     die if %opts;
     _global_init();
@@ -788,14 +788,14 @@ __END__
 
 =head1 NAME
 
-Threads::DependentJob - Run interdependent jobs using a pool of worker threads
+Thread::DependentJob - Run interdependent jobs using a pool of worker threads
 
 =head1 SYNOPSIS
 
-  use Threads::DependentJob;
+  use Thread::DependentJob;
   use Thread::Semaphore ();
 
-  my $jobsch = Threads::DependentJob->new();
+  my $jobsch = Thread::DependentJob->new();
 
   sub do_work_func(...) {
     ... consume whatever is represented by input tokens ...
@@ -853,7 +853,7 @@ it's output tokens are immediately produced but
 marked "poisoned", and other jobs which depend on them
 will be cancelled.
 
-=head2 $jobsch = Threads::DependentJob->new(OPTIONS);
+=head2 $jobsch = Thread::DependentJob->new(OPTIONS);
 
 Create a job scheduler object.  Options are key => value pairs.
 
@@ -976,7 +976,7 @@ When a job finishes, it's semaphores are "upped" (by 1 or the indicated count).
 
 =head2 $results = $jobsch->wait();
 
-Wait until all jobs (managed by Threads::DependentJob instance B<$jobsch>) have completed.
+Wait until all jobs (managed by Thread::DependentJob instance B<$jobsch>) have completed.
 
 If called in void context (i.e. the results will not be examined), then warnings
 are issued about any jobs which aborted.  Silent if called in non-void context.
@@ -1063,10 +1063,10 @@ Then internal references are broken, allowing the job-scheduler object to be des
 
 This is not normally necessary, as it is done implicitly at process exit.
 
-=head2 Threads::DependentJob->Configure(global_options...)
+=head2 Thread::DependentJob->Configure(global_options...)
 
 Set global options, which affect all job scheduler instances.
-These options may also be passed to C<< Threads::DependentJob->new >>
+These options may also be passed to C<< Thread::DependentJob->new >>
 but affect all instances.
 
 =over
@@ -1094,13 +1094,13 @@ __END__
 #!/usr/bin/perl
 use strict; use warnings;
 use threads; use threads::shared;
-use Threads::DependentJob;
+use Thread::DependentJob;
 use Carp;
 use Data::Dumper::Interp;
 select STDERR; $|=1; select STDOUT; $|=1;
 
-$Threads::DependentJob::debug = 0;
-Threads::DependentJob->Configure({NUMTHREADS => 3});
+$Thread::DependentJob::debug = 0;
+Thread::DependentJob->Configure({NUMTHREADS => 3});
 
 our %jobids_seen : shared ;
 
@@ -1118,7 +1118,7 @@ sub inner($&) {
   my $outer_name = (caller(1))[3];
   my $tid = threads->tid();
   my $jobid = my_jobid();
-  { lock $Threads::DependentJob::warnlock;
+  { lock $Thread::DependentJob::warnlock;
     warn ivis "[tid $tid] jobid $jobid: ${outer_name}\@\$args Starting...\\n";
     if ($jobids_seen{$jobid}) { warn "jobid used previously!?!"; exit 1; }
     $jobids_seen{$jobid} = 1;
@@ -1136,7 +1136,7 @@ sub inner($&) {
     }
   }
   &$code();
-  { lock $Threads::DependentJob::warnlock;
+  { lock $Thread::DependentJob::warnlock;
     warn ivis "[tid $tid] jobid $jobid: ${outer_name}\@\$args Finishing...\\n";
     foreach (@$outputs) {
       next if ref;
@@ -1182,11 +1182,11 @@ sub run_tests($) {
   my ($opts) = @_;
   warn "==================== START TEST WITH ",vis($opts),"========================\n";
 
-  my $jobsch0 = Threads::DependentJob->new($opts);
+  my $jobsch0 = Thread::DependentJob->new($opts);
   warn "TESTER: Created dummy Job Scheduler $jobsch0 (will not be used)\n";
   #$jobsch0->wait();
 
-  $jobsch = Threads::DependentJob->new($opts);
+  $jobsch = Thread::DependentJob->new($opts);
   warn "TESTER: Created Job Scheduler $jobsch\n";
   confess "bug" if defined my_jobid;
 
@@ -1246,8 +1246,8 @@ sub run_tests($) {
   }
 }
 
-$Threads::DependentJob::debug = 1; # show final cleanup messages
-$Threads::DependentJob::debug = 0; # don't show final cleanup messages
+$Thread::DependentJob::debug = 1; # show final cleanup messages
+$Thread::DependentJob::debug = 0; # don't show final cleanup messages
 
 run_tests({DEBUG => 0, SERIAL => 1});
 run_tests({DEBUG => 0, SERIAL => 0});

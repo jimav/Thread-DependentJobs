@@ -19,8 +19,8 @@ use feature 'signatures';
 # Check that jobs actually run on concurrent threads
 #################################################################
 
-use Threads::DependentJobs qw/my_jobid/;
-Threads::DependentJobs->Configure(DEBUG => $debug);
+use Thread::DependentJobs qw/my_jobid/;
+Thread::DependentJobs->Configure(DEBUG => $debug);
 
 my $numcpus = $ENV{NUMBER_OF_PROCESSORS}  # provided by Windows
     || (`grep "processor\t:" /proc/cpuinfo  | wc -l`);
@@ -67,7 +67,7 @@ spinner(args => [2]) if $debug; ## TEST IN MAIN THREAD
 
 my %results_direct :shared ;
 
-my $jobsch = Threads::DependentJobs->new(NUMTHREADS => $num_threads);
+my $jobsch = Thread::DependentJobs->new(NUMTHREADS => $num_threads);
 
 note tsstr, " [main] before scheduling any jobs";
 my @jobids;
