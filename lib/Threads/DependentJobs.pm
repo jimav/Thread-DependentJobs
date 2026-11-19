@@ -4,8 +4,7 @@ use strict; use warnings; use feature qw(say state signatures);
 package Threads::DependentJobs;
 
 our @ISA       = qw(Exporter);
-our @EXPORT    = qw(my_jobid);
-our @EXPORT_OK = qw();
+our @EXPORT    = ();
 
 { no strict 'refs'; ${__PACKAGE__."::VER"."SION"} //= 997.999; }
 # VERSION from Dist::Zilla::Plugin::OurPkgVersion
