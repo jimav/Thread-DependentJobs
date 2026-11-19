@@ -3,8 +3,9 @@ use strict; use warnings; use feature qw(say state signatures);
 
 package Threads::DependentJobs;
 
-our @ISA       = qw(Exporter);
+our @ISA       = qw/Exporter/;
 our @EXPORT    = ();
+our @EXPORT_OK = qw/my_jobid/;
 
 { no strict 'refs'; ${__PACKAGE__."::VER"."SION"} //= 997.999; }
 # VERSION from Dist::Zilla::Plugin::OurPkgVersion
@@ -757,7 +758,10 @@ sub _wrapup_job($self, $job, $up_semas) {
     $self->_enqueue_if_ready(\@dependent_jobids);
 }#_wrapup_job
 
-sub my_jobid() {
+sub my_jobid {
+  # This actually can be called as a class method, object method,
+  # or plain function
+
   #confess "my_jobid() may only be called from an executing job\n"
   #  unless defined $my_jobid;
   return $curr_jobid;

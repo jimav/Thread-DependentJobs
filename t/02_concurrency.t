@@ -19,7 +19,7 @@ use feature 'signatures';
 # Check that jobs actually run on concurrent threads
 #################################################################
 
-use Threads::DependentJobs;
+use Threads::DependentJobs qw/my_jobid/;
 Threads::DependentJobs->Configure(DEBUG => $debug);
 
 my $numcpus = $ENV{NUMBER_OF_PROCESSORS}  # provided by Windows

@@ -65,6 +65,7 @@ like($copied_inputs{$j1}, undef);
 like($copied_outputs{$j1}, undef);
 
 # j2, run in list context, consumed 'bbb' and 'aaa' and produced 'ccc'
+#btw dvis '$r';
 like($r->{$j2}->{RESULT}, [11,12,13,14], "j2 results");
 ok(! exists $r->{$j2}->{ABORTMSG});
 ok(! exists $r->{$j2}->{EXCEPTION});
@@ -92,7 +93,8 @@ exit 0;
 
 sub jobfunc(%params) {
   my $tid = threads->tid;
-  my $jobid = my_jobid();
+  my $jobsch = $params{js} // oops;
+  my $jobid = $jobsch->my_jobid();
   if (1 or $debug) {
     btw "## [$tid] #############################\n",
         dvis('jobfunc: $jobid %params wantarray='),vis(wantarray);
@@ -103,7 +105,7 @@ sub jobfunc(%params) {
   foreach my $token (@{ $params{outputs} }) {
     note "[$tid] $jobid setting created[",vis($token),"]\n";
     lock %created;
-    $created{$token} = my_jobid();
+    $created{$token} = $jobsch->my_jobid();
   }
   { lock %copied_outputs; $copied_outputs{$jobid} = $params{outputs}; }
   { lock %copied_inputs;  $copied_inputs{$jobid}  = $params{inputs}; }
